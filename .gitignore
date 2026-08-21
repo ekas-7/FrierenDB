@@ -1,0 +1,17 @@
+# Build output
+target/
+*.class
+
+# IDE files
+.idea/
+*.iml
+*.iws
+.classpath
+.project
+.settings/
+
+# OS files
+.DS_Store
+
+# Local configuration and secrets
+.env
