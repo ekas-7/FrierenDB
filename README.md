@@ -1,5 +1,7 @@
 # FrierenDB
 
+![Frieren watching the sunset](docs/assets/frieren.jpg)
+
 An embedded relational database engine written from scratch in Java 21, being built toward a natural-language query agent: ask a question in English, and an agent inspects the schema, writes read-only SQL, runs it through controlled tools, and explains the result.
 
 > **Status: early development.** The storage foundation is done. There is no SQL parser, query executor, index, transaction support, or natural-language agent yet, so the project cannot run queries today. See [Status](#status).
@@ -43,7 +45,7 @@ frierendb/            Maven multi-module build
       types/          DataType, Value (sealed, NULL-aware ordering)
       schema/         Column, Schema, Row, RowCodec
       storage/        PageFile, BufferPool, SlottedPage, HeapFile, RecordId
-docs/                 Design notes and progress log
+docs/                 Design notes, progress log and README assets
 ```
 
 ## Documentation
