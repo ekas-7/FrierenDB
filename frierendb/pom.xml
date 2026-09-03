@@ -12,6 +12,7 @@
 
     <modules>
         <module>engine</module>
+        <module>agent</module>
     </modules>
 
     <properties>
