@@ -1,0 +1,50 @@
+[
+  {
+    "question": "How many students are there?",
+    "goldSql": "SELECT COUNT(*) FROM students"
+  },
+  {
+    "question": "What is the average GPA of CS students?",
+    "goldSql": "SELECT AVG(gpa) FROM students WHERE major = 'CS'"
+  },
+  {
+    "question": "Which student has the highest GPA?",
+    "goldSql": "SELECT name FROM students ORDER BY gpa DESC LIMIT 1"
+  },
+  {
+    "question": "How many students are in each major? Ignore students without a major.",
+    "goldSql": "SELECT major, COUNT(*) FROM students WHERE major IS NOT NULL GROUP BY major"
+  },
+  {
+    "question": "Which courses does the Math department offer?",
+    "goldSql": "SELECT title FROM courses WHERE dept = 'Math'"
+  },
+  {
+    "question": "How many enrollments were there in Fall 2025?",
+    "goldSql": "SELECT COUNT(*) FROM enrollments WHERE term = 'Fall 2025'"
+  },
+  {
+    "question": "What is the average grade in Intro to Databases?",
+    "goldSql": "SELECT AVG(e.grade) FROM enrollments e JOIN courses c ON c.cid = e.cid WHERE c.title = 'Intro to Databases'"
+  },
+  {
+    "question": "Which students are not enrolled in any course?",
+    "goldSql": "SELECT s.name FROM students s LEFT JOIN enrollments e ON e.sid = s.sid WHERE e.sid IS NULL"
+  },
+  {
+    "question": "Which course has the most enrollments?",
+    "goldSql": "SELECT c.title FROM courses c JOIN enrollments e ON e.cid = c.cid GROUP BY c.title ORDER BY COUNT(*) DESC LIMIT 1"
+  },
+  {
+    "question": "List the names of the students enrolled in Genetics.",
+    "goldSql": "SELECT s.name FROM students s JOIN enrollments e ON e.sid = s.sid JOIN courses c ON c.cid = e.cid WHERE c.title = 'Genetics'"
+  },
+  {
+    "question": "How many students have no GPA recorded?",
+    "goldSql": "SELECT COUNT(*) FROM students WHERE gpa IS NULL"
+  },
+  {
+    "question": "How many students have a GPA of at least 3.9?",
+    "goldSql": "SELECT COUNT(*) FROM students WHERE gpa >= 3.9"
+  }
+]
