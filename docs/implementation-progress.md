@@ -27,6 +27,7 @@ Engine and agent exist end to end. Remaining: live-model validation, indexes, tr
 | 6 | Planner and executor, writes, `EXPLAIN`, read-only query mode with limits | 65 tests (queries, writes, safety, value semantics) |
 | 7 | Agent core: tools, bounded loop, OpenAI-compatible client | 39 tests, incl. a simulated compromised model and a local `HttpServer` |
 | 8 | CLI, demo dataset, evaluation harness | 16 tests; CLI smoke-tested by piping commands into `Main` |
+| 9 | Documentation: HLD, 20-step build guide, LLD reference, guides | The Maven and CLI commands quoted in the docs were run; every relative link checked; byte-level examples and `EXPLAIN` output taken from the real code |
 
 Full reactor: 162 engine tests and 55 agent tests, all passing (`mvn clean test`, JDK 21).
 
@@ -46,10 +47,9 @@ Full reactor: 162 engine tests and 55 agent tests, all passing (`mvn clean test`
 ## Next milestones
 
 1. Run `--eval` against a real model, record the result with model name and date, and fix what it shows.
-2. Long-form docs (`docs/01…`) teaching how each layer is built.
-3. B+ tree index and index-aware planning.
-4. Transactions and a write-ahead log.
-5. Optional REST API and structured logging.
+2. B+ tree index and index-aware planning.
+3. Transactions and a write-ahead log.
+4. Optional REST API and structured logging.
 
 ## Build and test
 

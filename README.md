@@ -87,4 +87,10 @@ docs/                 Design notes, progress log and README assets
 
 ## Documentation
 
+Start at [`docs/README.md`](docs/README.md). The docs are written so the whole system can be rebuilt by hand:
+
+- [`docs/hld/`](docs/hld/): problem, architecture, runtime flows, design decisions, safety model, roadmap
+- [`docs/build-guide/`](docs/build-guide/): 20 step-by-step files, from the Maven skeleton to the CLI and evaluation harness
+- [`docs/lld/`](docs/lld/): class reference, on-disk formats, SQL grammar, error model, `EXPLAIN` examples, agent protocol
+- [`docs/guides/`](docs/guides/): testing strategy, extension recipes, troubleshooting, glossary
 - [`docs/implementation-progress.md`](docs/implementation-progress.md): milestones, validation, known issues, next steps
