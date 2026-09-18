@@ -94,6 +94,13 @@ public final class BPlusTree {
         return keyType;
     }
 
+    /** Throws if the key could not be inserted; a NULL key is acceptable because NULLs are skipped. */
+    public void checkKey(Value key) {
+        if (!key.isNull()) {
+            KeyCodec.check(keyType, key);
+        }
+    }
+
     public synchronized long size() {
         try (BufferPool.Frame meta = pool.fetch(file, 0)) {
             return ByteBuffer.wrap(meta.data()).getLong(11);
