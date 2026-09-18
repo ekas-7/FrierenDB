@@ -19,13 +19,14 @@ import java.util.TreeMap;
 import java.util.regex.Pattern;
 
 /**
- * Persistent table registry. Definitions live in {@code catalog.bin}; each table's rows live in
- * {@code <name>.tbl}. Table names are restricted to simple identifiers because they become file names.
+ * Persistent registry of tables and their indexes. Definitions live in {@code catalog.bin}; each
+ * table's rows live in {@code <table>.tbl} and each index in {@code <table>.<index>.idx}. Names are
+ * restricted to simple identifiers because they become file names.
  */
 public final class Catalog implements AutoCloseable {
 
     private static final int MAGIC = 0x46524E43;
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]{0,63}");
 
     private final Path dir;
@@ -56,6 +57,7 @@ public final class Catalog implements AutoCloseable {
         if (tables.containsKey(key)) {
             throw new CatalogException("Table already exists: " + name);
         }
+        deleteStale(tablePath(key));
         Table table = new Table(key, schema, tablePath(key), pool);
         tables.put(key, table);
         save();
@@ -68,13 +70,65 @@ public final class Catalog implements AutoCloseable {
         if (table == null) {
             throw new CatalogException("No such table: " + name);
         }
+        List<Path> files = new ArrayList<>();
+        for (IndexInfo index : table.indexes()) {
+            files.add(indexPath(key, index.name()));
+        }
         table.close();
+        save();
         try {
             Files.deleteIfExists(tablePath(key));
+            for (Path file : files) {
+                Files.deleteIfExists(file);
+            }
         } catch (IOException e) {
             throw new CatalogException("Cannot delete data file of table " + name, e);
         }
+    }
+
+    /**
+     * Creates an index on one column and fills it from the rows already in the table. The index
+     * file is built first and only registered once it is complete and on disk.
+     */
+    public synchronized IndexInfo createIndex(String name, String tableName, String columnName) {
+        String indexKey = normalize("index", name);
+        if (indexExists(indexKey)) {
+            throw new CatalogException("Index already exists: " + name);
+        }
+        Table table = table(tableName);
+        int ordinal = table.schema().requireIndexOf(columnName);
+        IndexInfo info = new IndexInfo(indexKey, table.name(), table.schema().column(ordinal).name());
+        Path path = indexPath(table.name(), indexKey);
+        deleteStale(path);
+        TableIndex index;
+        try {
+            index = table.buildIndex(info, ordinal, path);
+        } catch (RuntimeException e) {
+            deleteStale(path);
+            throw e;
+        }
+        table.attach(index);
         save();
+        return info;
+    }
+
+    public synchronized void dropIndex(String name) {
+        String indexKey = name.toLowerCase(Locale.ROOT);
+        for (Table table : tables.values()) {
+            if (table.hasIndex(indexKey)) {
+                TableIndex index = table.detach(indexKey);
+                save();
+                index.close(pool);
+                deleteStale(indexPath(table.name(), indexKey));
+                return;
+            }
+        }
+        throw new CatalogException("No such index: " + name);
+    }
+
+    public synchronized boolean indexExists(String name) {
+        String indexKey = name.toLowerCase(Locale.ROOT);
+        return tables.values().stream().anyMatch(t -> t.hasIndex(indexKey));
     }
 
     public synchronized Table table(String name) {
@@ -105,11 +159,28 @@ public final class Catalog implements AutoCloseable {
     }
 
     private String normalize(String name) {
+        return normalize("table", name);
+    }
+
+    private String normalize(String kind, String name) {
         if (!IDENTIFIER.matcher(name).matches()) {
             throw new CatalogException(
-                    "Invalid table name '" + name + "': use letters, digits and underscores, starting with a letter or underscore");
+                    "Invalid " + kind + " name '" + name + "': use letters, digits and underscores, starting with a letter or underscore");
         }
         return name.toLowerCase(Locale.ROOT);
+    }
+
+    private Path indexPath(String table, String index) {
+        return dir.resolve(table + "." + index + ".idx");
+    }
+
+    /** Removes a file that no catalog entry refers to, such as one left behind by a crash. */
+    private void deleteStale(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException e) {
+            throw new CatalogException("Cannot delete " + path, e);
+        }
     }
 
     private Path tablePath(String key) {
@@ -130,6 +201,12 @@ public final class Catalog implements AutoCloseable {
                     out.writeUTF(column.type().name());
                     out.writeBoolean(column.nullable());
                 }
+                List<IndexInfo> indexes = table.indexes();
+                out.writeInt(indexes.size());
+                for (IndexInfo index : indexes) {
+                    out.writeUTF(index.name());
+                    out.writeUTF(index.column());
+                }
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -148,7 +225,7 @@ public final class Catalog implements AutoCloseable {
                 throw new CatalogException(file + " is not a FrierenDB catalog");
             }
             int version = in.readInt();
-            if (version != VERSION) {
+            if (version < 1 || version > VERSION) {
                 throw new CatalogException("Unsupported catalog version " + version);
             }
             int tableCount = in.readInt();
@@ -163,7 +240,19 @@ public final class Catalog implements AutoCloseable {
                 if (!Files.exists(data)) {
                     throw new CatalogException("Data file missing for table " + name + ": " + data);
                 }
-                tables.put(name, new Table(name, new Schema(columns), data, pool));
+                Table table = new Table(name, new Schema(columns), data, pool);
+                tables.put(name, table);
+                int indexCount = version >= 2 ? in.readInt() : 0;
+                for (int i = 0; i < indexCount; i++) {
+                    String indexName = in.readUTF();
+                    String columnName = in.readUTF();
+                    Path indexFile = indexPath(table.name(), normalize("index", indexName));
+                    if (!Files.exists(indexFile)) {
+                        throw new CatalogException("Index file missing for index " + indexName + ": " + indexFile);
+                    }
+                    int ordinal = table.schema().requireIndexOf(columnName);
+                    table.attach(table.openIndex(new IndexInfo(indexName, table.name(), columnName), ordinal, indexFile));
+                }
             }
         } catch (IOException | IllegalArgumentException e) {
             throw new CatalogException("Cannot read catalog " + file, e);
