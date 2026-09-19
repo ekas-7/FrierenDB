@@ -269,4 +269,33 @@ class ParserTest {
     void unknownColumnTypeIsRejected() {
         assertThrows(SqlException.class, () -> Parser.parse("create table t (a blob)"));
     }
+
+    @Test
+    void parsesCreateAndDropIndex() {
+        assertEquals(new Statement.CreateIndex("idx_gpa", "students", "gpa", false),
+                Parser.parse("CREATE INDEX idx_gpa ON students (gpa)"));
+        assertEquals(new Statement.CreateIndex("i", "t", "c", true),
+                Parser.parse("create index if not exists i on t(c);"));
+        assertEquals(new Statement.DropIndex("idx_gpa", false), Parser.parse("DROP INDEX idx_gpa"));
+        assertEquals(new Statement.DropIndex("i", true), Parser.parse("drop index if exists i"));
+        assertFalse(Parser.parse("create index i on t(c)").isReadOnly());
+        assertFalse(Parser.parse("drop index i").isReadOnly());
+    }
+
+    @Test
+    void rejectsMalformedIndexStatements() {
+        assertThrows(SqlException.class, () -> Parser.parse("create index on t (c)"));
+        assertThrows(SqlException.class, () -> Parser.parse("create index i on t"));
+        assertThrows(SqlException.class, () -> Parser.parse("create index i on t ()"));
+        SqlException multi = assertThrows(SqlException.class, () -> Parser.parse("create index i on t (a, b)"));
+        assertTrue(multi.getMessage().contains("exactly one column"));
+        assertThrows(SqlException.class, () -> Parser.parse("create unique index i on t (a)"));
+        assertThrows(SqlException.class, () -> Parser.parse("drop index"));
+    }
+
+    @Test
+    void indexIsNotAReservedWord() {
+        Select s = select("select index from t");
+        assertEquals(1, s.items().size());
+    }
 }
