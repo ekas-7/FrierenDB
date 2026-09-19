@@ -37,6 +37,8 @@ public final class Executor {
             case Statement.Delete d -> delete(d, context);
             case Statement.CreateTable c -> createTable(c);
             case Statement.DropTable d -> dropTable(d);
+            case Statement.CreateIndex c -> createIndex(c);
+            case Statement.DropIndex d -> dropIndex(d);
         };
         if (!statement.isReadOnly()) {
             catalog.flush();
@@ -80,6 +82,7 @@ public final class Executor {
             }
             prepared.add(schema.conform(List.of(values)));
         }
+        prepared.forEach(table::checkIndexable);
         prepared.forEach(table::insert);
         return QueryResult.affected(prepared.size());
     }
@@ -127,6 +130,7 @@ public final class Executor {
             }
             replacements.add(schema.conform(updated));
         }
+        replacements.forEach(table::checkIndexable);
         for (int i = 0; i < matches.size(); i++) {
             table.update(matches.get(i).id(), replacements.get(i));
         }
@@ -182,6 +186,22 @@ public final class Executor {
             return QueryResult.affected(0);
         }
         catalog.dropTable(drop.name());
+        return QueryResult.affected(0);
+    }
+
+    private QueryResult createIndex(Statement.CreateIndex create) {
+        if (create.ifNotExists() && catalog.indexExists(create.name())) {
+            return QueryResult.affected(0);
+        }
+        catalog.createIndex(create.name(), create.table(), create.column());
+        return QueryResult.affected(0);
+    }
+
+    private QueryResult dropIndex(Statement.DropIndex drop) {
+        if (drop.ifExists() && !catalog.indexExists(drop.name())) {
+            return QueryResult.affected(0);
+        }
+        catalog.dropIndex(drop.name());
         return QueryResult.affected(0);
     }
 }

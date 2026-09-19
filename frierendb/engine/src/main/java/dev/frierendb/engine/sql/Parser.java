@@ -84,10 +84,10 @@ public final class Parser {
             return delete();
         }
         if (acceptKeyword("create")) {
-            return createTable();
+            return acceptKeyword("index") ? createIndex() : createTable();
         }
         if (acceptKeyword("drop")) {
-            return dropTable();
+            return acceptKeyword("index") ? dropIndex() : dropTable();
         }
         throw error(peek(), "Expected SELECT, INSERT, UPDATE, DELETE, CREATE, DROP or EXPLAIN");
     }
@@ -279,6 +279,34 @@ public final class Parser {
             acceptKeyword("null");
         }
         return new ColumnDef(name, type, nullable);
+    }
+
+    private Statement createIndex() {
+        boolean ifNotExists = false;
+        if (acceptKeyword("if")) {
+            expectKeyword("not");
+            expectKeyword("exists");
+            ifNotExists = true;
+        }
+        String name = identifier();
+        expectKeyword("on");
+        String table = identifier();
+        expectSymbol("(");
+        String column = identifier();
+        if (peek().kind() == Kind.SYMBOL && peek().text().equals(",")) {
+            throw error(peek(), "An index covers exactly one column");
+        }
+        expectSymbol(")");
+        return new Statement.CreateIndex(name, table, column, ifNotExists);
+    }
+
+    private Statement dropIndex() {
+        boolean ifExists = false;
+        if (acceptKeyword("if")) {
+            expectKeyword("exists");
+            ifExists = true;
+        }
+        return new Statement.DropIndex(identifier(), ifExists);
     }
 
     private Statement dropTable() {

@@ -1,6 +1,7 @@
 package dev.frierendb.engine;
 
 import dev.frierendb.engine.catalog.Catalog;
+import dev.frierendb.engine.catalog.IndexInfo;
 import dev.frierendb.engine.exec.Executor;
 import dev.frierendb.engine.exec.QueryOptions;
 import dev.frierendb.engine.exec.QueryResult;
@@ -68,6 +69,11 @@ public final class Database implements AutoCloseable {
 
     public synchronized Schema tableSchema(String table) {
         return catalog.table(table).schema();
+    }
+
+    /** Definitions of the indexes on a table, ordered by index name. */
+    public synchronized List<IndexInfo> tableIndexes(String table) {
+        return catalog.table(table).indexes();
     }
 
     @Override

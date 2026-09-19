@@ -81,6 +81,10 @@ public sealed interface Statement {
 
     record DropTable(String name, boolean ifExists) implements Statement {}
 
+    record CreateIndex(String name, String table, String column, boolean ifNotExists) implements Statement {}
+
+    record DropIndex(String name, boolean ifExists) implements Statement {}
+
     record Explain(Select select) implements Statement {
         @Override
         public boolean isReadOnly() {
