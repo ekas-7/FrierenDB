@@ -152,7 +152,10 @@ public final class Executor {
             ExecutionContext context) {
         RowFunction predicate = where == null ? null : compiler.compile(where);
         List<Table.RowEntry> matches = new ArrayList<>();
-        for (Iterator<Table.RowEntry> it = table.scan(); it.hasNext(); ) {
+        Iterator<Table.RowEntry> source = IndexSelection.choose(table, table.name(), where)
+                .map(c -> table.indexScan(c.index().name(), c.lo(), c.loInclusive(), c.hi(), c.hiInclusive()))
+                .orElseGet(table::scan);
+        for (Iterator<Table.RowEntry> it = source; it.hasNext(); ) {
             Table.RowEntry entry = it.next();
             context.tick();
             if (predicate == null || ExpressionCompiler.matches(predicate, entry.row(), "WHERE condition")) {

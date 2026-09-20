@@ -37,13 +37,30 @@ final class Planner {
 
     PlanNode plan(Select select) {
         Set<String> aliases = new HashSet<>();
-        PlanNode node = scan(select.from(), aliases);
+        PlanNodes.Scan first = scan(select.from(), aliases);
+        List<PlanNode> others = new ArrayList<>();
         for (Join join : select.joins()) {
-            node = join(node, scan(join.table(), aliases), join);
+            others.add(scan(join.table(), aliases));
+        }
+        RowSchema combined = first.schema();
+        for (PlanNode other : others) {
+            combined = combined.concat(other.schema());
+        }
+        RowFunction predicate = select.where() == null ? null : new ExpressionCompiler(combined, null).compile(select.where());
+
+        // Only the FROM table is narrowed by an index: restricting it can never drop a row the
+        // WHERE clause would keep, even when LEFT JOINs follow, and the full WHERE is rechecked below.
+        PlanNode node = first;
+        if (predicate != null) {
+            node = IndexSelection.choose(first.table(), first.alias(), select.where())
+                    .<PlanNode>map(choice -> new PlanNodes.IndexScan(first.table(), first.alias(), choice))
+                    .orElse(first);
+        }
+        for (int i = 0; i < others.size(); i++) {
+            node = join(node, others.get(i), select.joins().get(i));
         }
         RowSchema base = node.schema();
-        if (select.where() != null) {
-            RowFunction predicate = new ExpressionCompiler(base, null).compile(select.where());
+        if (predicate != null) {
             node = new PlanNodes.Filter(node, predicate, ExprFormatter.format(select.where()), "WHERE condition");
         }
 
@@ -111,7 +128,7 @@ final class Planner {
         return node;
     }
 
-    private PlanNode scan(TableRef ref, Set<String> aliases) {
+    private PlanNodes.Scan scan(TableRef ref, Set<String> aliases) {
         Table table = catalog.table(ref.name());
         String alias = ref.effectiveName();
         if (!aliases.add(alias.toLowerCase(Locale.ROOT))) {
@@ -125,7 +142,7 @@ final class Planner {
         RowFunction condition = new ExpressionCompiler(combined, null).compile(join.on());
         List<Integer> leftKeys = new ArrayList<>();
         List<Integer> rightKeys = new ArrayList<>();
-        for (Expr conjunct : conjuncts(join.on())) {
+        for (Expr conjunct : IndexSelection.conjuncts(join.on())) {
             if (conjunct instanceof Expr.Binary b && b.op() == Expr.BinaryOp.EQ
                     && b.left() instanceof Expr.ColumnRef a && b.right() instanceof Expr.ColumnRef c) {
                 OptionalInt aLeft = left.schema().find(a.table(), a.column());
@@ -145,15 +162,6 @@ final class Planner {
                 leftKeys.stream().mapToInt(Integer::intValue).toArray(),
                 rightKeys.stream().mapToInt(Integer::intValue).toArray(),
                 ExprFormatter.format(join.on()));
-    }
-
-    private static List<Expr> conjuncts(Expr expr) {
-        if (expr instanceof Expr.Binary b && b.op() == Expr.BinaryOp.AND) {
-            List<Expr> all = new ArrayList<>(conjuncts(b.left()));
-            all.addAll(conjuncts(b.right()));
-            return all;
-        }
-        return List.of(expr);
     }
 
     private PlanNode aggregate(PlanNode child, List<Expr> groupExprs, List<RowFunction> groupFns, GroupScope scope) {
