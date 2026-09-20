@@ -97,6 +97,14 @@ final class PlanNodes {
                     .toList());
         }
 
+        Table table() {
+            return table;
+        }
+
+        String alias() {
+            return alias;
+        }
+
         @Override
         public RowSchema schema() {
             return schema;
@@ -114,6 +122,44 @@ final class PlanNodes {
         public void describe(int depth, List<String> out) {
             String suffix = alias.equalsIgnoreCase(table.name()) ? "" : " AS " + alias;
             out.add(PlanNode.indent(depth) + "Scan " + table.name() + suffix + " (full table scan)");
+        }
+    }
+
+    /** Reads only the rows in a key range of one index, in key order. The filter above still rechecks them. */
+    static final class IndexScan implements PlanNode {
+        private final Table table;
+        private final String alias;
+        private final IndexSelection.Choice choice;
+        private final RowSchema schema;
+
+        IndexScan(Table table, String alias, IndexSelection.Choice choice) {
+            this.table = table;
+            this.alias = alias;
+            this.choice = choice;
+            this.schema = new RowSchema(table.schema().columns().stream()
+                    .map(c -> new RowSchema.Binding(alias, c.name()))
+                    .toList());
+        }
+
+        @Override
+        public RowSchema schema() {
+            return schema;
+        }
+
+        @Override
+        public Iterator<Row> execute(ExecutionContext context) {
+            return mapped(table.indexScan(choice.index().name(), choice.lo(), choice.loInclusive(),
+                    choice.hi(), choice.hiInclusive()), entry -> {
+                context.tick();
+                return entry.row();
+            });
+        }
+
+        @Override
+        public void describe(int depth, List<String> out) {
+            String suffix = alias.equalsIgnoreCase(table.name()) ? "" : " AS " + alias;
+            out.add(PlanNode.indent(depth) + "IndexScan " + table.name() + suffix + " using "
+                    + choice.index().name() + " (" + choice.condition() + ")");
         }
     }
 
