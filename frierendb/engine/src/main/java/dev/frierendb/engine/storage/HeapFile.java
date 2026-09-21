@@ -20,6 +20,12 @@ public final class HeapFile {
     public HeapFile(PageFile file, BufferPool pool) {
         this.file = file;
         this.pool = pool;
+        reload();
+    }
+
+    /** Rebuilds the free-space cache from the pages on disk, after pages were restored by a rollback. */
+    public synchronized void reload() {
+        freeBytes.clear();
         for (int pageId = 0; pageId < file.pageCount(); pageId++) {
             try (BufferPool.Frame frame = pool.fetch(file, pageId)) {
                 freeBytes.add(new SlottedPage(frame.data()).freeBytes());

@@ -2,7 +2,9 @@ package dev.frierendb.engine.storage;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -66,5 +68,35 @@ class PageFileTest {
         Path path = dir.resolve("broken.pages");
         Files.write(path, new byte[PageFile.PAGE_SIZE + 17]);
         assertThrows(StorageException.class, () -> PageFile.open(path));
+    }
+
+    @Test
+    void truncateDropsTrailingPagesAndKeepsTheRest() {
+        try (PageFile file = PageFile.open(dir.resolve("t.pages"))) {
+            for (int i = 0; i < 5; i++) {
+                byte[] page = new byte[PageFile.PAGE_SIZE];
+                page[0] = (byte) (i + 1);
+                file.write(i, page);
+            }
+            file.truncate(3);
+            assertEquals(3, file.pageCount());
+            assertEquals(3, file.read(2)[0]);
+            assertThrows(StorageException.class, () -> file.read(3));
+            file.truncate(3);
+            assertEquals(3, file.allocate(), "the next page id follows the truncated end");
+            assertThrows(StorageException.class, () -> file.truncate(10));
+            assertThrows(StorageException.class, () -> file.truncate(-1));
+        }
+        try (PageFile reopened = PageFile.open(dir.resolve("t.pages"))) {
+            assertEquals(4, reopened.pageCount());
+        }
+    }
+
+    @Test
+    void isOpenReflectsClose() {
+        PageFile file = PageFile.open(dir.resolve("t.pages"));
+        assertTrue(file.isOpen());
+        file.close();
+        assertFalse(file.isOpen());
     }
 }

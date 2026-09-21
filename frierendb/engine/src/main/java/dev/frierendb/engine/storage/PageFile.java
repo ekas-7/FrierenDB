@@ -91,6 +91,26 @@ public final class PageFile implements Closeable {
         }
     }
 
+    /** Drops every page from {@code newPageCount} onwards. Used to undo allocations during rollback. */
+    public synchronized void truncate(int newPageCount) {
+        if (newPageCount < 0 || newPageCount > pageCount) {
+            throw new StorageException("Cannot truncate " + path + " to " + newPageCount + " pages (it has " + pageCount + ")");
+        }
+        if (newPageCount == pageCount) {
+            return;
+        }
+        try {
+            channel.truncate((long) newPageCount * PAGE_SIZE);
+        } catch (IOException e) {
+            throw new StorageException("Cannot truncate " + path, e);
+        }
+        pageCount = newPageCount;
+    }
+
+    public synchronized boolean isOpen() {
+        return channel.isOpen();
+    }
+
     public synchronized void sync() {
         try {
             channel.force(false);

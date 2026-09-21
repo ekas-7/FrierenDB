@@ -157,4 +157,20 @@ class HeapFileTest {
             assertEquals(500, scanAll(heap).size());
         }
     }
+
+    @Test
+    void reloadRebuildsFreeSpaceFromTheCurrentPages() {
+        try (PageFile file = PageFile.open(dir.resolve("h.pages"))) {
+            BufferPool pool = new BufferPool(4);
+            HeapFile heap = new HeapFile(file, pool);
+            RecordId a = heap.insert(new byte[3000]);
+            heap.insert(new byte[3000]);
+            assertEquals(2, heap.pageCount());
+            heap.delete(a);
+            heap.reload();
+            RecordId reused = heap.insert(new byte[3000]);
+            assertEquals(a.pageId(), reused.pageId(), "space freed before the reload is found again");
+            assertEquals(2, heap.pageCount());
+        }
+    }
 }
