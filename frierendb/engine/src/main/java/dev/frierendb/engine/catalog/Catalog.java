@@ -147,6 +147,11 @@ public final class Catalog implements AutoCloseable {
         return List.copyOf(tables.keySet());
     }
 
+    /** Rebuilds in-memory state derived from pages, after a rollback restored the pages themselves. */
+    public synchronized void reload() {
+        tables.values().forEach(Table::reload);
+    }
+
     public synchronized void flush() {
         tables.values().forEach(Table::flush);
     }

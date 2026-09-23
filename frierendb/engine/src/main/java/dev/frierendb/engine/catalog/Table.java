@@ -203,6 +203,11 @@ public final class Table {
         return new ArrayList<>(indexes.values());
     }
 
+    /** Rebuilds in-memory state derived from pages after a rollback restored them. */
+    void reload() {
+        heap.reload();
+    }
+
     void flush() {
         heap.flush();
         indexes.values().forEach(index -> index.flush(pool));

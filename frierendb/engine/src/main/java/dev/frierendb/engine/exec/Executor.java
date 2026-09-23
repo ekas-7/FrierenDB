@@ -16,7 +16,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-/** Runs parsed statements against a catalog. Not thread-safe; callers serialise access. */
+/**
+ * Runs parsed statements against a catalog. Not thread-safe; callers serialise access. It never
+ * flushes or commits: {@code Database} owns durability and transactions.
+ */
 public final class Executor {
 
     private final Catalog catalog;
@@ -29,7 +32,7 @@ public final class Executor {
 
     public QueryResult execute(Statement statement, QueryOptions options) {
         ExecutionContext context = options.newContext();
-        QueryResult result = switch (statement) {
+        return switch (statement) {
             case Statement.Select s -> select(s, options, context);
             case Statement.Explain e -> explain(e);
             case Statement.Insert i -> insert(i);
@@ -43,10 +46,6 @@ public final class Executor {
             case Statement.Commit c -> throw transactionControl();
             case Statement.Rollback r -> throw transactionControl();
         };
-        if (!statement.isReadOnly()) {
-            catalog.flush();
-        }
-        return result;
     }
 
     private static SqlException transactionControl() {
