@@ -39,11 +39,18 @@ public final class Executor {
             case Statement.DropTable d -> dropTable(d);
             case Statement.CreateIndex c -> createIndex(c);
             case Statement.DropIndex d -> dropIndex(d);
+            case Statement.Begin b -> throw transactionControl();
+            case Statement.Commit c -> throw transactionControl();
+            case Statement.Rollback r -> throw transactionControl();
         };
         if (!statement.isReadOnly()) {
             catalog.flush();
         }
         return result;
+    }
+
+    private static SqlException transactionControl() {
+        return new SqlException("BEGIN, COMMIT and ROLLBACK must be run through Database.execute");
     }
 
     private QueryResult select(Statement.Select select, QueryOptions options, ExecutionContext context) {

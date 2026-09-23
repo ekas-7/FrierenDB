@@ -298,4 +298,24 @@ class ParserTest {
         Select s = select("select index from t");
         assertEquals(1, s.items().size());
     }
+
+    @Test
+    void parsesTransactionControl() {
+        assertEquals(new Statement.Begin(), Parser.parse("BEGIN"));
+        assertEquals(new Statement.Begin(), Parser.parse("begin transaction;"));
+        assertEquals(new Statement.Commit(), Parser.parse("COMMIT"));
+        assertEquals(new Statement.Commit(), Parser.parse("commit transaction"));
+        assertEquals(new Statement.Rollback(), Parser.parse("ROLLBACK"));
+        assertEquals(new Statement.Rollback(), Parser.parse("rollback transaction"));
+        assertFalse(Parser.parse("begin").isReadOnly());
+        assertFalse(Parser.parse("commit").isReadOnly());
+        assertFalse(Parser.parse("rollback").isReadOnly());
+        assertThrows(SqlException.class, () -> Parser.parse("begin work now"));
+        assertThrows(SqlException.class, () -> Parser.parse("commit; commit"));
+    }
+
+    @Test
+    void transactionWordsAreNotReserved() {
+        assertEquals(4, select("select begin, commit, rollback, transaction from t").items().size());
+    }
 }

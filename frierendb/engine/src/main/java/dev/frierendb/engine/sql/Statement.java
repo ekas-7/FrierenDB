@@ -85,6 +85,13 @@ public sealed interface Statement {
 
     record DropIndex(String name, boolean ifExists) implements Statement {}
 
+    /** Transaction control. These change no data themselves, but they are not read-only. */
+    record Begin() implements Statement {}
+
+    record Commit() implements Statement {}
+
+    record Rollback() implements Statement {}
+
     record Explain(Select select) implements Statement {
         @Override
         public boolean isReadOnly() {

@@ -89,7 +89,19 @@ public final class Parser {
         if (acceptKeyword("drop")) {
             return acceptKeyword("index") ? dropIndex() : dropTable();
         }
-        throw error(peek(), "Expected SELECT, INSERT, UPDATE, DELETE, CREATE, DROP or EXPLAIN");
+        if (acceptKeyword("begin")) {
+            acceptKeyword("transaction");
+            return new Statement.Begin();
+        }
+        if (acceptKeyword("commit")) {
+            acceptKeyword("transaction");
+            return new Statement.Commit();
+        }
+        if (acceptKeyword("rollback")) {
+            acceptKeyword("transaction");
+            return new Statement.Rollback();
+        }
+        throw error(peek(), "Expected SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, EXPLAIN, BEGIN, COMMIT or ROLLBACK");
     }
 
     private Select select() {
