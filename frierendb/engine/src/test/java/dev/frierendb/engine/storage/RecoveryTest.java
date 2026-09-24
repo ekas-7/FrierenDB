@@ -260,6 +260,20 @@ class RecoveryTest {
     }
 
     @Test
+    void aLogNamingAFileOutsideTheDirectoryIsRefusedAndTouchesNothing() throws IOException {
+        Path inner = Files.createDirectory(root.resolve("inner"));
+        Path outside = root.resolve("escape.pages");
+        byte[] page = new byte[PageFile.PAGE_SIZE];
+        try (Wal log = Wal.open(inner.resolve(Wal.FILE_NAME))) {
+            log.append(Wal.LogRecord.update(1, "../escape.pages", 0, page, page));
+            log.append(Wal.LogRecord.commit(1));
+            log.force();
+        }
+        assertThrows(StorageException.class, () -> Recovery.recover(inner));
+        assertFalse(Files.exists(outside), "nothing was created outside the database directory");
+    }
+
+    @Test
     void aTornTailAfterTheLastCommitIsReportedAndIgnored() throws IOException {
         BufferPool pool = pool(8);
         seed(pool, 1, 1);
