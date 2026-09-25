@@ -32,6 +32,8 @@ API:
 | `flush(file)` | Write every dirty frame of that file, then `file.sync()` (frames stay cached) |
 | `evictAll(file)` | `flush`, then remove the file's frames; fails if any is still pinned |
 
+> **Later change (step 22):** with a `Wal` attached the pool also provides one transaction at a time (`begin`, `commit`, `rollback`, `checkpoint`), keeps before-images, and logs a page before it is written. The statement below that eviction "does not `sync()`" still holds for the plain cache; `checkpoint()` is what syncs the files written since the last sync. A pool without a log behaves exactly as described in this step.
+
 ## Build it
 
 1. A private `record PageKey(PageFile file, int pageId)`. `PageFile` uses identity equality, which is what we want (one object per file).

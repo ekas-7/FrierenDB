@@ -25,6 +25,7 @@ An unordered collection of records spanning many pages, addressed by `RecordId(p
 - `update(id, bytes)`: try `SlottedPage.update`; if the page cannot hold it, delete the old record and insert elsewhere; return the (possibly new) RID.
 - `scan()`: returns an `Iterator<Entry(RecordId, byte[])>` over the pages that **existed when the scan began**, pinning one page at a time (never leaving pages pinned between `next()` calls). Records inserted during the scan to new pages are not visited.
 - `flush()` delegates to `BufferPool.flush(file)` (write + fsync).
+- Added in step 22: `reload()` clears the free-space list and rebuilds it from the pages (the constructor calls it). A rollback changes pages behind the heap's back, so `Database` calls it through `Catalog.reload()`.
 
 ## Build it
 

@@ -25,6 +25,8 @@ interface PlanNode {
 }
 ```
 
+> **Later change (step 21):** the planner builds all scans first, compiles the `WHERE`, may replace the `FROM` table's `Scan` by an `IndexScan`, and then builds the joins. The `Filter` below is still the full `WHERE`. Steps 1-2 below describe the original order.
+
 ### Pipeline built by `Planner.plan(Select)`
 
 1. **Scan** the `FROM` table with its alias; for each `JOIN`, scan the right table and wrap both in a `Join`. Table aliases must be unique (`Table name 'x' is used more than once; give each use a distinct alias`).

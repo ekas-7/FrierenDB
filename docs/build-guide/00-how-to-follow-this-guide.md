@@ -32,6 +32,10 @@ The guide rebuilds FrierenDB layer by layer, bottom up. Each step ends in someth
 | 11-15 | Execution | `feat: add SQL planner, executor and read-only query mode with resource limits` |
 | 16-18 | Agent | `feat: add natural-language analyst agent with read-only tools` |
 | 19 | CLI, demo, eval | `feat: add interactive CLI, demo dataset and evaluation harness` |
+| 20-21 | B+ tree indexes, `CREATE INDEX`, index-aware planning | `feat(index): add a persistent B+ tree`, then catalog, SQL and planner commits |
+| 22-23 | Write-ahead log, transactions, recovery | `feat(storage): add write-ahead-logged transactions to BufferPool`, `feat(storage): add crash recovery from the write-ahead log`, `feat: add transactions and crash recovery to Database` |
+
+Steps 1-19 build the system in the order it was first written. Steps 20-23 were added afterwards and change files from steps 5, 7, 8, 10, 12 and 14 (each of those files has a note saying what changes). If you are rebuilding from scratch you may fold the changes into the earlier steps as you go, but keep the same tests.
 
 ## What you need
 

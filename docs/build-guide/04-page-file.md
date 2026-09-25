@@ -32,6 +32,8 @@ API:
 | `void close()` | Closes the channel |
 | `int pageCount()`, `Path path()` | Accessors |
 
+Added in [step 22](22-write-ahead-log-and-recovery.md): `truncate(int pageCount)` (drops pages from a count onward, used to undo allocations) and `isOpen()`.
+
 ## Build it
 
 1. `StorageException extends FrierenException` (with `serialVersionUID`).

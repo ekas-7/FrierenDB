@@ -9,7 +9,7 @@ Run every statement type against the catalog and expose one safe, thread-safe en
 ## Concepts
 
 - **Snapshot-then-modify**: collect the rows an `UPDATE`/`DELETE` will touch *before* changing anything, so the statement cannot see (or re-process) its own writes (the "Halloween problem").
-- **Validate everything, then write**: a multi-row `INSERT` is atomic with respect to validation errors.
+- **Validate everything, then write**: a multi-row `INSERT` is atomic with respect to validation errors. (Since step 23 it is atomic with respect to *any* failure, because every write statement runs in a transaction.)
 - **Facade**: hide parser, planner and catalog behind a few methods.
 
 ## Design
@@ -36,7 +36,7 @@ A `switch` over the sealed `Statement`:
 | `CreateTable` | Build a `Schema` from `ColumnDef`s; `IF NOT EXISTS` returns 0 when it exists |
 | `DropTable` | `IF EXISTS` returns 0 when absent |
 
-After any **non-read-only** statement, call `catalog.flush()` (write dirty pages and fsync). This is the durability point described in the HLD.
+In the first version, after any **non-read-only** statement the executor called `catalog.flush()` (write dirty pages and fsync); that was the durability point. **Step 23 replaces this**: the executor no longer flushes, and `Database` makes each write statement a transaction whose commit forces the log. If you build this step on its own, keep the flush and remove it in step 23.
 
 ### `Database`
 
@@ -51,9 +51,11 @@ public synchronized Schema tableSchema(String table)
 public synchronized void close()                             // flush + close tables
 ```
 
+Step 23 adds `open(dir, bufferPages, checkpointBytes)`, `inTransaction()`, `recoveryReport()`, `logSize()` and `tableIndexes(table)`, and changes `close()` to roll back an open transaction, checkpoint, and close the log.
+
 `query` parses, checks `statement.isReadOnly()`, throws `ReadOnlyViolationException` otherwise, then executes with the caller's limits.
 
-`executeScript` parses the whole script first (syntax errors stop before anything runs), then executes statements in order; the first runtime error stops the script (earlier statements stay applied; there are no transactions).
+`executeScript` parses the whole script first (syntax errors stop before anything runs), then executes statements in order; the first runtime error stops the script (earlier statements stay applied unless the script itself wraps them in `BEGIN ... COMMIT`; before step 23 there were no transactions).
 
 ## Build it
 
@@ -82,7 +84,7 @@ for (Iterator<Table.RowEntry> it = table.scan(); it.hasNext(); ) {
 - **Do not mutate while scanning**: a growing row that relocates to the end of the file would be visited again; snapshotting avoids it.
 - **`INSERT` into an unknown column** should fail via `Schema.requireIndexOf` with the column name.
 - **`close()` order**: flush every table, then close; leaving pins would make `evictAll` throw.
-- `executeScript` is not atomic; do not describe it as a transaction.
+- `executeScript` is not atomic by itself; do not describe it as a transaction (a script can contain `BEGIN`/`COMMIT`, which does make those statements one).
 
 ## Tests to write
 

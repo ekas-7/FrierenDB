@@ -22,6 +22,8 @@ Named tables that survive restarts: remember each table's schema, and give every
 - Encoding and decoding go through `RowCodec` with the table's schema; so `insert` validates rows (`Schema.conform` is called inside `encode`).
 - `flush()` → `heap.flush()`; `close()` → `pool.evictAll(file)` then `file.close()`.
 
+> **Later change (steps 20-23):** `Table` also maintains indexes, the catalog format becomes version 2 (an index section per table; version 1 files still load), `Catalog` gains `createIndex`/`dropIndex`/`reload`, and the catalog is no longer flushed after every statement. The text below is the original version-1 design.
+
 ### `Catalog`
 
 - Directory layout: `catalog.bin` plus `<table>.tbl`.
