@@ -6,6 +6,7 @@ Notation: `UPPER` = keyword (case-insensitive), `[x]` optional, `{x}` zero or mo
 
 ```
 statement      = select | explain | insert | update | delete | create_table | drop_table
+               | create_index | drop_index | begin | commit | rollback
 input          = statement [ ';' ] EOF            -- Parser.parse: exactly one statement
 script         = { [ ';' ] statement } separated by ';'    -- Parser.parseScript
 
@@ -32,12 +33,21 @@ delete         = DELETE FROM name [ WHERE expr ]
 create_table   = CREATE TABLE [ IF NOT EXISTS ] name '(' column_def { ',' column_def } ')'
 column_def     = name type [ '(' number { ',' number } ')' ] [ NOT NULL | NULL ]
 drop_table     = DROP TABLE [ IF EXISTS ] name
+create_index   = CREATE INDEX [ IF NOT EXISTS ] name ON name '(' name ')'     -- exactly one column
+drop_index     = DROP INDEX [ IF EXISTS ] name
+begin          = BEGIN [ TRANSACTION ]
+commit         = COMMIT [ TRANSACTION ]
+rollback       = ROLLBACK [ TRANSACTION ]
 type           = INT | INTEGER | BIGINT | DOUBLE | FLOAT | REAL | TEXT | VARCHAR | STRING | BOOLEAN | BOOL
 ```
 
 Notes:
 
 - The size in `type(...)` is parsed and ignored.
+- `index`, `begin`, `commit`, `rollback` and `transaction` are **not** reserved, so they can still be table or column names.
+- Only `SELECT` and `EXPLAIN` are read-only (`Statement.isReadOnly()`). `CREATE INDEX`, `DROP INDEX`, `BEGIN`, `COMMIT` and `ROLLBACK` are not, so `Database.query` (the agent's door) rejects them.
+- `EXPLAIN` takes a `SELECT` only (`EXPLAIN DELETE ...` is a syntax error).
+- Transaction statements are executed by `Database`, not by `Executor`; `CREATE`/`DROP` of tables and indexes are refused inside a transaction (see [`../hld/08-transactions-and-recovery.md`](../hld/08-transactions-and-recovery.md)).
 - A comma after the first table (`FROM a, b`) is a specific error: *Comma joins are not supported; use JOIN ... ON*.
 - `LIMIT` accepts a plain integer literal only (no sign, decimal point or exponent).
 
@@ -94,7 +104,7 @@ A reserved word as a bare name gives: *'x' is a reserved word; quote it with dou
 
 ## Not supported (rejected or absent)
 
-Subqueries (`(SELECT ...)` fails as a reserved word in expression position), CTEs (`WITH`), `UNION`/`INTERSECT`/`EXCEPT`, `CASE`, `OFFSET`, window functions, `ALTER TABLE`, `CREATE INDEX`, `PRIMARY KEY`/`UNIQUE`/`DEFAULT`/`FOREIGN KEY`, `CAST`, `||` string concatenation, `RIGHT`/`FULL`/`CROSS` joins, comma joins, `INSERT ... SELECT`, `ORDER BY ... NULLS FIRST/LAST`.
+Subqueries (`(SELECT ...)` fails as a reserved word in expression position), CTEs (`WITH`), `UNION`/`INTERSECT`/`EXCEPT`, `CASE`, `OFFSET`, window functions, `ALTER TABLE`, `CREATE UNIQUE INDEX`, multi-column indexes, `SAVEPOINT`, `PRIMARY KEY`/`UNIQUE`/`DEFAULT`/`FOREIGN KEY`, `CAST`, `||` string concatenation, `RIGHT`/`FULL`/`CROSS` joins, comma joins, `INSERT ... SELECT`, `ORDER BY ... NULLS FIRST/LAST`.
 
 ## Semantics worth remembering
 

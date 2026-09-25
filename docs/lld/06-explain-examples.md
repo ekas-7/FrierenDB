@@ -4,7 +4,8 @@ Real output from the CLI on the demo dataset (`--demo`). Plans are printed top-d
 
 Reading tips:
 
-- `Scan t AS x (full table scan)`: every row of the table is read; there are no indexes.
+- `Scan t AS x (full table scan)`: every row of the table is read.
+- `IndexScan t [AS x] using idx (cond)`: only the key range of index `idx` is read (see example 6). A `Filter` with the full `WHERE` always stays above it.
 - `Filter ...`: keeps rows where the condition is exactly `TRUE`.
 - `HashJoin` is chosen when the `ON` clause contains at least one `column = column` pair across both sides; otherwise `NestedLoopJoin`.
 - `Sort [...] (NULLs first when ascending)`: NULLs come first for `ASC` and last for `DESC`.
@@ -96,13 +97,71 @@ Project [a.name]
 
 No equality pair exists, so every left row is compared with every right row: O(n·m). The query deadline and memory cap exist for exactly this case.
 
+## 6. Index scans
+
+After `CREATE INDEX idx_major ON students (major)`:
+
+```sql
+EXPLAIN SELECT name FROM students WHERE major = 'CS'
+```
+
+```
+Project [name]
+  Filter (major = 'CS')
+    IndexScan students using idx_major (major = 'CS')
+```
+
+The `Filter` is the full `WHERE`; the index only limited which rows are read. With `CREATE INDEX idx_sid ON students (sid)`:
+
+```sql
+EXPLAIN SELECT name FROM students WHERE sid = 4 AND major = 'CS'
+```
+
+```
+Project [name]
+  Filter ((sid = 4) AND (major = 'CS'))
+    IndexScan students using idx_sid (sid = 4)
+```
+
+Only the indexable part (`sid = 4`) selects the range; `major = 'CS'` is checked by the filter. Ranges, and `BETWEEN` (rewritten by the parser to `>=` and `<=`):
+
+```sql
+EXPLAIN SELECT name FROM students WHERE sid BETWEEN 2 AND 5
+```
+
+```
+Project [name]
+  Filter ((sid >= 2) AND (sid <= 5))
+    IndexScan students using idx_sid (sid >= 2 AND sid <= 5)
+```
+
+In a join only the table after `FROM` is narrowed, and only if *its* column is indexed:
+
+```
+Project [s.name, e.grade]
+  Filter ((s.sid >= 3) AND (s.sid < 6))
+    HashJoin INNER ON (e.sid = s.sid)
+      IndexScan students AS s using idx_sid (sid >= 3 AND sid < 6)
+      Scan enrollments AS e (full table scan)
+```
+
+(The CLI table view cuts wide cells with `...`; the `IndexScan` line above is its full text.) With an index only on `enrollments.sid`, the same query shows `Scan students AS s (full table scan)`: the joined table's index is never used.
+
+These do **not** use an index:
+
+| Query | Plan line | Why |
+|---|---|---|
+| `WHERE sid = 2 OR sid = 3` | `Scan students (full table scan)` | `OR` is not an indexable conjunct |
+| `WHERE sid IN (2, 3)` | `Scan students (full table scan)` | `IN` is not handled |
+| `WHERE LOWER(major) = 'cs'` | `Scan students (full table scan)` | the column is inside an expression |
+
 ## Related behaviours seen in the same session
 
 | Input | Output |
 |---|---|
 | `SELECT 1 / 0 FROM courses LIMIT 1` | `Error: Division by zero` |
 | `SELECT * FROM students; DROP TABLE students` | `Error: Unexpected input after the end of the statement; only one statement is allowed at position 24 (found 'DROP')` |
-| `SELEKT 1` | `Error: Expected SELECT, INSERT, UPDATE, DELETE, CREATE, DROP or EXPLAIN at position 0 (found 'SELEKT')` |
+| `SELEKT 1` | `Error: Expected SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, EXPLAIN, BEGIN, COMMIT or ROLLBACK at position 0 (found 'SELEKT')` |
 | `SELECT name FROM students WHERE gpa IN (3.9, NULL)` | `Ada Chen`, `Pia Stone` (a match is found; non-matches become unknown and are dropped) |
 | `SELECT COUNT(*), SUM(gpa), AVG(gpa) FROM students WHERE sid > 100` | `0 | NULL | NULL` (a global aggregate over zero rows still yields one row) |
 | `SELECT sid, COUNT(*) FROM enrollments` | `Error: Column sid must appear in the GROUP BY clause or be used in an aggregate function` |

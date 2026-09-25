@@ -6,9 +6,11 @@ All multi-byte integers are **big-endian** (the Java `ByteBuffer`/`DataOutputStr
 
 ```
 <db-dir>/
-  catalog.bin        table definitions
+  catalog.bin        table and index definitions
   catalog.bin.tmp    only during a catalog save (atomically moved over catalog.bin)
   <table>.tbl        one heap file per table; <table> is lower-case [a-z0-9_]
+  <table>.<index>.idx  one B+ tree file per index (see below)
+  wal.log            write-ahead log (see below); 8 bytes when empty
 ```
 
 ## `<table>.tbl`: a sequence of pages
@@ -86,7 +88,7 @@ Decoding rejects: a text length that is negative or larger than the remaining by
 
 ```
 int      magic        0x46524E43 ("FRNC")
-int      version      1
+int      version      2            (version 1 files, which have no index section, still load)
 int      table count
 per table:
   UTF    table name           (DataOutputStream.writeUTF: 2-byte length + modified UTF-8)
@@ -95,16 +97,72 @@ per table:
     UTF      column name
     UTF      type name        ("INT" | "DOUBLE" | "TEXT" | "BOOLEAN")
     boolean  nullable         (1 byte)
+  int    index count          (version 2 only)
+  per index:
+    UTF      index name
+    UTF      column name
 ```
 
 - Written to `catalog.bin.tmp` then moved with `ATOMIC_MOVE | REPLACE_EXISTING`, so a crash leaves either the old or the new file.
-- Loading fails with `CatalogException` on a wrong magic or version, a missing `<table>.tbl`, or any unreadable content.
+- Loading fails with `CatalogException` on a wrong magic, a version above 2, a missing `<table>.tbl` or index file, or any unreadable content.
 - The catalog stores **definitions only**. Row counts and statistics are not stored.
+
+## `<table>.<index>.idx`: a B+ tree
+
+Pages are 4096 bytes. Page 0 is the meta page; page 1 is the first root (a leaf). Every other page is a leaf or an internal node.
+
+```
+Meta page (page 0)
+offset  size  field
+0       4     magic 0x46425054 ("FBPT")
+4       2     version (1)
+6       1     key type ordinal (0 INT, 1 DOUBLE, 2 TEXT, 3 BOOLEAN: the `DataType` enum order)
+7       4     root page id
+11      8     entry count
+
+Node page
+0       1     kind: 1 = leaf, 2 = internal
+1       2     entry count n (unsigned)
+3       4     leaf: next leaf page id (-1 = none)   internal: first child page id
+7       ...   n entries, packed, rest of the page zero
+
+Leaf entry:      key | page id (4) | slot (4)
+Internal entry:  key | page id (4) | slot (4) | child page id (4)    (child holds entries >= this entry)
+Key bytes:       INT 8 (signed long) | DOUBLE 8 | BOOLEAN 1 | TEXT 2-byte length + UTF-8 (at most 255 bytes)
+```
+
+- Entries are ordered by key, then page id, then slot. An internal node with `n` entries has `n + 1` children.
+- `NULL` keys are never stored.
+- Loading checks the magic, the version and that the key type matches the column; otherwise `StorageException`.
+
+## `wal.log`: the write-ahead log
+
+```
+int   magic    0x4657414C ("FWAL")
+int   version  1
+frames, until the end of the file:
+  int   payload length  (1 .. MAX_PAYLOAD)
+  int   CRC-32 of the payload
+  bytes payload
+
+COMMIT / ABORT payload:   type (1: COMMIT = 2, ABORT = 3) | transaction id (8)
+UPDATE payload (type 1):  type (1) | transaction id (8)
+                          | file name length (2) | file name (UTF-8, 1..255 bytes, no path)
+                          | page id (4) | has-before (1: 0 or 1)
+                          | before image (4096, only if has-before = 1) | after image (4096)
+```
+
+- `has-before = 0` means the transaction allocated that page (the file grew); recovery undoes it by truncating the file to that page id.
+- `MAX_PAYLOAD = 1 + 8 + 2 + 255 + 4 + 1 + 2 * 4096`.
+- The valid log is the longest prefix of whole frames whose length, CRC and contents are valid. Reading stops at the first bad frame; the bytes after it are ignored and trimmed on open.
+- A short file (under 8 bytes) is an empty log. A full header with the wrong magic or version is an **error**.
+- The log is emptied (truncated to the 8-byte header) by a checkpoint, by recovery, and by a clean `close`.
+- Transaction ids increase; after a restart the next id is one more than the largest id found in the log, or 1 if the log is empty.
 
 ## Compatibility
 
-There is no migration tooling. A format change must bump `VERSION` (catalog) and be rejected or converted explicitly. Page format has no version field; adding one (for example in a reserved header byte) would be the first step of any storage-format change.
+There is no migration tooling. A format change must bump the version of that file (`catalog.bin` is at 2 and still reads 1; `.idx` and `wal.log` are at 1 and reject anything else) and be rejected or converted explicitly. Heap pages have no version field; adding one (for example in a reserved header byte) would be the first step of any heap-format change.
 
 ## What is *not* on disk
 
-- No write-ahead log, no free-space map (rebuilt on open by scanning pages), no indexes, no statistics.
+- No free-space map (rebuilt on open by scanning heap pages), no statistics, no checksums on data or index pages (only the log has CRCs).
