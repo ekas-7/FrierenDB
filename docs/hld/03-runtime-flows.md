@@ -30,7 +30,7 @@ Steps in words:
 
 1. `Database.query` parses the text. A second statement after `;` is a parse error.
 2. If the statement is not `SELECT`/`EXPLAIN`, `ReadOnlyViolationException` is thrown. This check is on the parsed object, so it cannot disagree with what would run.
-3. The `Planner` resolves names against the catalog and builds a tree of operators.
+3. The `Planner` resolves names against the catalog and builds a tree of operators. If the `WHERE` clause has a usable comparison on an indexed column of the `FROM` table, the scan becomes an `IndexScan` over that key range; the full `WHERE` is still applied above it ([`07-indexes-and-index-aware-planning.md`](07-indexes-and-index-aware-planning.md)).
 4. The executor pulls rows from the root iterator until it has `maxRows` rows or the input ends. If more rows exist, `truncated = true`.
 5. Along the way, scans call `context.tick()` (deadline check) and blocking operators call `context.materialize(n)` (memory cap).
 
@@ -41,9 +41,14 @@ Steps in words:
 3. Evaluate each value expression with an empty input row (only constants and constant expressions are legal).
 4. `Schema.conform` checks arity, `NOT NULL`, and types (an `INT` may widen to `DOUBLE`).
 5. **Only after every row validated**, rows are encoded (`RowCodec`) and inserted into the heap file. A bad row in a multi-row insert means nothing is written.
-6. `catalog.flush()` writes dirty pages and calls `force` on each file, so the data is on disk when the call returns.
+6. The statement runs inside a transaction (an automatic one unless the user said `BEGIN`). Each changed page, with its before and after image, goes to `wal.log`; on commit the log is forced to disk, so the change is durable when the call returns. Data pages are written later (eviction or checkpoint). If anything fails, the transaction is rolled back and the table and its indexes are as they were. See [`08-transactions-and-recovery.md`](08-transactions-and-recovery.md).
+7. If the table has indexes, every inserted row also adds an entry to each index (`NULL` keys are skipped). Oversized `TEXT` keys are rejected in step 5, before any write.
 
-`UPDATE` and `DELETE` first collect all matching rows (a snapshot), then apply changes, so a statement never sees its own writes.
+`UPDATE` and `DELETE` first collect all matching rows (a snapshot, using an index when the `WHERE` allows), then apply changes, so a statement never sees its own writes.
+
+### Crash and recovery in one paragraph
+
+On `Database.open`, before any file is opened, `Recovery.recover` reads `wal.log`: it redoes the after-images of committed transactions, undoes the before-images of unfinished ones, syncs, and empties the log. The result is the state after the last commit, whatever the crash interrupted.
 
 ## Flow 3: `ask <question>`
 

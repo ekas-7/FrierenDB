@@ -26,9 +26,10 @@ flowchart TB
     DB["Database facade"]
     EXEC["exec: Planner, PlanNodes, Executor, ExpressionCompiler"]
     SQL["sql: Lexer, Parser, Statement, Expr"]
-    CAT["catalog: Catalog, Table"]
+    CAT["catalog: Catalog, Table, IndexInfo"]
+    IDX["index: BPlusTree, KeyCodec"]
     SCH["schema: Schema, Row, RowCodec"]
-    STO["storage: PageFile, BufferPool, SlottedPage, HeapFile"]
+    STO["storage: PageFile, BufferPool, SlottedPage, HeapFile, Wal, Recovery"]
     TYP["types: DataType, Value"]
   end
   CLI --> CORE
@@ -40,10 +41,13 @@ flowchart TB
   DEMO --> DB
   DB --> SQL
   DB --> EXEC
+  DB --> STO
   EXEC --> CAT
   EXEC --> SQL
   CAT --> SCH
   CAT --> STO
+  CAT --> IDX
+  IDX --> STO
   SCH --> TYP
 ```
 
@@ -55,11 +59,12 @@ Each box depends only on boxes below or beside it in the diagram; there are no c
 |---|---|---|---|
 | Values | `types` | Typed values, SQL `NULL`, total ordering | nothing |
 | Rows | `schema` | Column definitions, row validation, binary encoding | `types` |
-| Pages | `storage` | Fixed-size file I/O, caching, record placement | bytes only |
-| Tables | `catalog` | Named tables, persistence of definitions | `schema`, `storage` |
+| Pages | `storage` | Fixed-size file I/O, caching, record placement, the write-ahead log, transactions and recovery | bytes only |
+| Indexes | `index` | Persistent B+ tree from key to record id | `storage`, `types` |
+| Tables | `catalog` | Named tables and their indexes, persistence of definitions | `schema`, `storage`, `index` |
 | Language | `sql` | Text to a syntax tree | `types` |
 | Execution | `exec` | Tree to operators to results; semantics of NULL, limits | all of the above |
-| Facade | `Database` | One thread-safe entry point | `catalog`, `sql`, `exec` |
+| Facade | `Database` | One thread-safe entry point; recovery on open; transaction control | `storage`, `catalog`, `sql`, `exec` |
 
 Note the clean split: **storage knows nothing about schemas** (it moves byte arrays), and **the SQL parser knows nothing about tables** (it produces an unresolved tree). Name resolution and type checks happen later, in the planner and compiler.
 
@@ -96,16 +101,19 @@ A database is a directory:
 
 ```
 <db-dir>/
-  catalog.bin        table definitions (atomic replace)
+  catalog.bin        table and index definitions (atomic replace)
   <table>.tbl        one file per table, a sequence of 4096-byte pages
+  <table>.<index>.idx  one B+ tree file per index, 4096-byte pages
+  wal.log            write-ahead log: page images of recent transactions
 ```
 
 Byte-level layouts are in [`../lld/03-on-disk-formats.md`](../lld/03-on-disk-formats.md).
 
 ## Concurrency model
 
-- `Database` methods are `synchronized`: one statement at a time.
-- `BufferPool`, `PageFile`, `HeapFile` and `Catalog` are also synchronized per method so they stay consistent if used directly, but there is no transaction-level isolation.
+- `Database` methods are `synchronized`: one statement at a time, one session.
+- At most one transaction is open (`BufferPool` holds a single transaction id). There are no locks and no isolation: a read-only `query` made while a transaction is open sees its uncommitted changes.
+- `BufferPool`, `PageFile`, `HeapFile` and `Catalog` are also synchronized per method so they stay consistent if used directly.
 - Agent runs are synchronous and single-threaded; the HTTP client call blocks with a timeout.
 
 ## Build artefacts

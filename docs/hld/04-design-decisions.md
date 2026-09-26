@@ -6,7 +6,7 @@ Each entry: the decision, the alternatives, why, and what it costs. These are th
 
 - **Alternatives**: embed H2 or SQLite and build only the agent.
 - **Why**: the project's safety claim ("the model can only read, and cannot exhaust the machine") is strongest when read-only checking, row caps, deadlines and memory caps live inside the executor. Owning the engine also makes the build guide possible.
-- **Cost**: far less SQL, no optimizer, no indexes, no crash safety. Do not use it for real data.
+- **Cost**: far less SQL and no cost-based optimizer. It now has indexes and a write-ahead log, but one session, no locking and no benchmarks mean it still should not hold data you cannot afford to lose.
 
 ## D2. Maven multi-module: `engine` and `agent`
 
@@ -31,13 +31,16 @@ Each entry: the decision, the alternatives, why, and what it costs. These are th
 
 - **Why**: this is the textbook design; it supports variable-length records, deletion with space reuse, and datasets bigger than memory (a test runs a table far larger than the pool).
 - **Alternatives**: one file per table appended with length-prefixed rows (simpler, but no in-place update or space reuse).
-- **Cost**: a record may not exceed 4088 bytes (no overflow pages). No write-ahead log, so a crash mid-write can leave a table inconsistent.
+- **Cost**: a record may not exceed 4088 bytes (no overflow pages). Crash safety is added on top by the write-ahead log (D6).
 
-## D6. Durability by flush-after-write, not by logging
+## D6. Durability by a write-ahead log (physical, whole-page, steal / no-force)
 
-- **Decision**: after every modifying statement, flush dirty pages and `force` the files. The catalog is replaced atomically (temp file + atomic move).
-- **Why**: honest and simple; shows where a WAL would go.
-- **Cost**: a crash *during* a statement can corrupt the table; a test (`unflushedDataIsLostOnReopenBecauseThereIsNoWriteAheadLogYet`) documents that unflushed data is lost.
+- **History**: the first version flushed and synced every file after each statement and had no log, so a crash *during* a statement could corrupt a table. That was replaced.
+- **Decision**: log before and after images of whole pages. Steal (uncommitted pages may be written) and no-force (commit writes only the log). One transaction at a time. Recovery redoes committed work and undoes unfinished work before any file is opened. Details: [`08-transactions-and-recovery.md`](08-transactions-and-recovery.md).
+- **Alternatives**: logical logging of rows (small log, but needs undo logic per operation and per index); shadow paging (no log, but copy-on-write pages and a page table); keeping flush-after-write (simple, not crash safe).
+- **Why**: page images make undo and redo mechanical, and they cover heap pages and B+ tree pages with the same code. A buffer pool hook is the only place that has to know about the log.
+- **Cost**: a large log (up to two page images per changed page), a log force per commit, no concurrency. The single-transaction rule is what makes the simple recovery argument valid: an unfinished transaction is always the last one in the log.
+- **What would change it**: record-level logging with LSNs on pages, and locking, for concurrent transactions.
 
 ## D7. Pull-based iterator operators
 
@@ -93,3 +96,16 @@ Each entry: the decision, the alternatives, why, and what it costs. These are th
 ## D16. Documentation instead of code comments
 
 - Source files hold almost no comments; the reasoning is in this folder. When behaviour changes, the doc changes in the same commit.
+
+## D17. Secondary indexes as persistent B+ trees on one column, chosen by rule
+
+- **Decision**: `CREATE INDEX name ON table (column)` builds a non-unique B+ tree file keyed by `(value, record id)`. The planner uses an index only for comparisons of an indexed column with a constant on the `FROM` table, and always keeps the full `WHERE` as a filter above the scan. Details: [`07-indexes-and-index-aware-planning.md`](07-indexes-and-index-aware-planning.md).
+- **Alternatives**: unique-only indexes (simpler tree, less useful); a cost model with statistics (better choices, much more code and no data to calibrate on); hash indexes (no ranges).
+- **Why**: putting the record id in the sort order removes every special case for duplicates; the re-applied filter means a planner mistake can slow a query down but not change its answer; the rule-based choice needs no statistics.
+- **Cost**: no merge on delete (sparse trees), a 255-byte TEXT key limit, no index-ordered `ORDER BY`, no index on joined tables, and a rule that always picks an available index even when a scan would be cheaper (for example a low-selectivity predicate).
+
+## D18. Schema changes are not transactional
+
+- **Decision**: `CREATE`/`DROP` of tables and indexes are refused inside a transaction and run alone after a checkpoint.
+- **Why**: they create and delete files, which the page log cannot undo; making them transactional would need file-level logging.
+- **Cost**: a script that mixes DDL and a transaction must commit before each DDL statement.

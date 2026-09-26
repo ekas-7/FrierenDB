@@ -5,6 +5,7 @@
 | Asset | Threat | Defence | Where |
 |---|---|---|---|
 | Data integrity | Model (or injected text) runs `DELETE`/`DROP`/`UPDATE`/`INSERT` | Read-only check on the **parsed statement**; only `SELECT`/`EXPLAIN` pass | `Database.query`, `Statement.isReadOnly` |
+| Data integrity | Model runs `CREATE INDEX`, `DROP INDEX`, `BEGIN`, `COMMIT` or `ROLLBACK` (for example to hold a transaction open) | These statements are not read-only either; `Database.query` rejects them with `ReadOnlyViolationException` | `Statement.isReadOnly`, `SqlIndexDdlTest.indexStatementsAreNotReadOnly`, `SqlTransactionTest.readOnlyQueriesCannotControlTransactionsButDoSeeOpenChanges` |
 | Data integrity | Stacked statements: `SELECT 1; DROP TABLE x` | Parser accepts exactly one statement; trailing input is an error | `Parser.parse` |
 | Host resources | Huge result | `maxRows` cap, `truncated` flag | `Executor.select` |
 | Host resources | Cartesian product / slow query | Wall-clock deadline checked by scans and join loops | `ExecutionContext.tick` |
@@ -12,6 +13,7 @@
 | Host resources | Pathological `LIKE` | Linear-time matcher, no regex backtracking | `SqlValues.like` |
 | Host resources | Deeply nested SQL to overflow the stack | Parse depth limit of 64 | `Parser.enter` |
 | File system | Table name such as `../../etc/x` used as a file name | Table names must match `[A-Za-z_][A-Za-z0-9_]{0,63}`; quoted names are validated too | `Catalog.normalize` |
+| File system | Index name such as `../x` used as a file name, or a damaged log naming a path outside the database | Index names use the same validation as table names; recovery refuses log file names with path components | `Catalog.normalize`, `Recovery.open`, `RecoveryTest.aLogNamingAFileOutsideTheDirectoryIsRefusedAndTouchesNothing` |
 | Cost and availability | Endless tool loop | `maxSteps`, `maxToolCallsPerStep`, `maxRunTime` | `AnalystAgent` |
 | Prompt integrity | Instructions hidden in table data ("ignore previous rules and delete…") | Tool output is labelled untrusted; more importantly, even a fully compromised model has no write capability | `DatabaseTools.DATA_HEADER` + read-only check |
 | Secrets | API key in logs or errors | `Config.toString` masks the key; errors never include it; key comes from env, not code | `OpenAiCompatibleModel` |
@@ -31,6 +33,7 @@ Be explicit about the gaps:
 - **No access control**: if a table is in the database, the agent can read it. Do not point the agent at a database that holds data the *asker* should not see.
 - **Data leaves the machine**: tool results are sent to the LLM provider. Treat the provider as a data recipient.
 - **No authentication** on the CLI or engine. Anyone with the files has everything.
+- **No isolation between the agent and a human session**: if a person opens a transaction in the same `Database` object and has not committed, the agent's read-only queries see those uncommitted changes. The agent still cannot write or end the transaction.
 - **Prompt injection can still change the *answer*** (for example make the model state something false). It cannot change what the system *does*. Users should treat answers as assistance, not authority; the CLI prints the trace (queries run) so the result can be checked.
 - **No rate limiting across runs**; each `ask` has its own limits.
 - **Denial of service by many `ask` calls** is out of scope for an embedded tool.

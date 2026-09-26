@@ -17,6 +17,8 @@ Owning the engine is what makes the safety story credible: the "read-only" rule 
 |---|---|
 | Correct core SQL for analytics | `SELECT` with joins, grouping, aggregates, ordering; three-valued logic; overflow and divide-by-zero are errors |
 | Durable embedded storage | Page file, buffer pool, slotted pages, heap file, persistent catalog |
+| Crash safety | Write-ahead log, atomic statements, `BEGIN`/`COMMIT`/`ROLLBACK`, recovery on open ([08](08-transactions-and-recovery.md)) |
+| Faster selective queries | B+ tree indexes and rule-based index-aware planning ([07](07-indexes-and-index-aware-planning.md)) |
 | Safe AI access | Four tools, read-only parser check, row/time/memory caps, bounded loop |
 | Testable without an LLM | `ChatModel` interface and a scripted fake; a local HTTP server for the real client |
 | Honest evaluation | Execution-accuracy harness with reference SQL; no accuracy is claimed without a real run |
@@ -24,11 +26,12 @@ Owning the engine is what makes the safety story credible: the "read-only" rule 
 
 ## Non-goals (not built)
 
-- Indexes (no B+ tree), so every scan is a full table scan.
-- Transactions, locking, MVCC, or a write-ahead log. A crash during a write can corrupt data.
+- Index features beyond single-column, non-unique B+ trees: no unique, multi-column or covering indexes, no statistics, no index-ordered `ORDER BY`.
+- Concurrency control: locking, isolation levels, MVCC, multiple simultaneous transactions. There is one session and one open transaction at a time.
+- Transactional schema changes: `CREATE`/`DROP` cannot run inside a transaction or be rolled back.
 - Network server, wire protocol, authentication, multi-user access.
 - Full SQL: no subqueries, CTEs, `UNION`, `CASE`, `OFFSET`, window functions, comma joins, constraints other than `NOT NULL`.
-- Query optimisation beyond choosing a hash join for equi-joins.
+- Cost-based query optimisation. The only choices are a hash join for equi-joins and a rule-based index choice for the `FROM` table.
 - Multiple LLM provider SDKs. Only the OpenAI-style chat-completions protocol is implemented.
 
 See [`06-limitations-and-roadmap.md`](06-limitations-and-roadmap.md) for how each would be approached.
