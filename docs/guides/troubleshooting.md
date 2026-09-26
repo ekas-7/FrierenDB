@@ -34,8 +34,17 @@
 | `File ... is not a whole number of pages` | Truncated or foreign file in the database directory | Restore from backup; do not hand-edit `.tbl` files |
 | `Data file missing for table x` | `<table>.tbl` deleted but `catalog.bin` still lists it | Restore the file or remove the table definition by recreating the database |
 | `... is not a FrierenDB catalog` / `Cannot read catalog` | Corrupt or foreign `catalog.bin` | Restore from backup |
-| Data lost after a crash | No write-ahead log | Known limitation; keep backups; see roadmap R3 |
-| `Record of N bytes exceeds the page limit of 4088` | A row is too large (long `TEXT`) | Store less text; overflow pages are not implemented |
+| Committed data missing after a crash | Should not happen: report it with the contents of `wal.log` and the data directory | Keep a copy of the directory *before* reopening; recovery rewrites files and empties the log |
+| `... is not a FrierenDB write-ahead log` or `Unsupported write-ahead log version` | `wal.log` is foreign or corrupt (a *torn tail* is trimmed silently; a bad header is refused) | Restore from backup; do not delete the log of a crashed database (it holds committed work) unless you accept losing it |
+| `Write-ahead log names a file outside the database directory` | Corrupt log | Restore from backup |
+| `Cannot undo a change to x: the file is not open` | A table was dropped while its transaction was open (this should be impossible through `Database`) | Use `Database` rather than driving `BufferPool` directly |
+| `Index file missing for index x` at open | An `.idx` file was deleted | Restore it, or recreate the database; there is no `REINDEX` |
+| `Index key is N bytes; TEXT index keys are limited to 255 bytes` | A `TEXT` value over 255 bytes in an indexed column | Shorten the value, or index another column |
+| `Record of N bytes exceeds the page limit of 4088` | A row is too large (long `TEXT`) | Store less text; overflow pages are not implemented. Inside a transaction this surfaces as `TransactionException` and the whole transaction was rolled back |
+| `A transaction is already in progress` / `COMMIT without BEGIN` | Transaction misuse | Check `inTransaction()`; there is no nesting |
+| `CREATE and DROP cannot run inside a transaction` | DDL while a transaction is open | `COMMIT` or `ROLLBACK` first |
+| `The statement failed after changing data, so the whole transaction was rolled back` | A write statement failed part-way inside a transaction | Nothing from the transaction remains; start again with `BEGIN` |
+| Query is slow on a big table although an index exists | The `WHERE` has no usable comparison on that table's column (`OR`, `IN`, `LIKE`, a function of the column, a joined table's column) | Run `EXPLAIN`; look for `IndexScan`; rewrite the condition as `column op constant` |
 
 ## Agent behaviour
 
@@ -44,7 +53,7 @@
 | Wrong numbers | The model wrote semantically wrong SQL | Inspect the trace (SQL is shown); add a question to the eval set |
 | "I cannot answer" | Question refers to data that is not in the tables | Check `\tables` and `describe_table` |
 | Many failed queries | Model uses unsupported SQL (subquery, CASE) | The error text tells it what is wrong; the `run_query` description lists supported SQL |
-| Slow runs | Large tables with joins | Add `LIMIT`/filters; remember every scan is a full scan |
+| Slow runs | Large tables with joins | Add `LIMIT`/filters; a table is scanned in full unless an index fits the `WHERE` (check `EXPLAIN` for `IndexScan`) |
 | Output cut off | `maxToolOutputChars` or row cap hit | Ask for aggregates; check `truncated` notices in the trace |
 
 ## Debugging tips

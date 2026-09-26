@@ -42,4 +42,15 @@
 | **Trace** | The list of `TraceEvent`s recording each model call and tool call of a run. |
 | **Trust boundary** | A line across which data must be validated (model output, tool args, DB data, files). |
 | **Untrusted data label** | The `RESULT (untrusted data ...)` prefix on database text sent to the model. |
-| **WAL (write-ahead log)** | A log written before data pages so crashes can be recovered. **Not implemented.** |
+| **WAL (write-ahead log)** | `wal.log`: before and after images of changed pages, forced to disk at commit and before an uncommitted page is written, so crashes can be recovered. |
+| **Transaction** | A group of changes that are all kept (`COMMIT`) or all discarded (`ROLLBACK`). Every write statement is one automatically. |
+| **Steal / no-force** | Steal: uncommitted pages may be written to data files. No-force: commit does not write data pages, only the log. |
+| **Before-image / after-image** | A page's bytes before / after a transaction changed it; undo restores the first, redo the second. |
+| **Redo / undo** | Recovery re-applies committed changes and reverts unfinished ones. |
+| **Checkpoint** | Write every dirty page, sync, and empty the log. |
+| **Recovery** | `Recovery.recover` on open: redo, undo, sync, empty log. |
+| **Torn write / torn tail** | A write cut off by a crash; the log reader ignores a partial or corrupt last frame. |
+| **B+ tree** | A balanced tree whose leaves hold all entries and are linked for range scans; the index structure used here. |
+| **Index scan** | Reading only a key range of an index, then fetching those rows; `IndexScan` in `EXPLAIN`. |
+| **Rule-based planner** | Chooses by fixed rules (use an index if one fits), not by estimated cost from statistics. |
+| **Oracle test** | A test that compares a fast implementation with a slow, obviously correct one on random input. |

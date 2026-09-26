@@ -21,8 +21,8 @@ Each recipe lists the files to touch, in order, and the tests to add. The sealed
 
 1. `Statement`: add a record. Decide `isReadOnly()`; **leave the default `false`** for anything that changes data or schema (this protects the agent).
 2. `Parser.statement()`: dispatch on the keyword; add the keyword to `RESERVED` if appropriate.
-3. `Executor.execute`: add a `case` (exhaustive switch). Remember `catalog.flush()` runs automatically for non-read-only statements.
-4. Tests: parse, execute, persistence across reopen, and **`QuerySafetyTest.readOnlyModeRejectsEveryModifyingStatement`** extended with the new statement.
+3. `Executor.execute`: add a `case` (exhaustive switch), and a matching case in `Database.run`: a statement that writes pages belongs with `Insert`/`Update`/`Delete` (automatic transaction, rolled back on failure); one that creates or deletes files belongs with the DDL cases (checkpoint first, refused inside a transaction). There is no per-statement flush any more; the log provides durability.
+4. Tests: parse, execute, persistence across reopen, failure leaves no trace (`SqlTransactionTest` style), a crash copy (`CrashRecoveryTest` style), and **`QuerySafetyTest.readOnlyModeRejectsEveryModifyingStatement`** extended with the new statement.
 
 ## Add a column type (e.g. `DATE`)
 
@@ -66,9 +66,15 @@ Ask first: *does this widen what a compromised model can do?* If it can write, c
 
 Edit `agent/src/main/resources/demo/university.sql`. Re-check every evaluation question's gold answer and the counts quoted in docs (`build-guide/19-cli-demo-and-eval.md`).
 
-## Add an index (outline)
+## Extend indexes or transactions
 
-See `hld/06-limitations-and-roadmap.md` (R2). Start with the B+ tree in isolation, with property-style tests against a `TreeMap`, before touching the planner.
+The B+ tree, index planning, log and recovery exist. Read `hld/07`, `hld/08`, `lld/08` and `lld/09` first. Rules that keep them correct:
+
+- **Never remove the `Filter` above an `IndexScan`.** Any new way of choosing an index (`IN`, `OR`, prefixes) must still leave the full `WHERE` in place, and must have an oracle test that compares against the same query with the index defeated.
+- **A new page-writing structure** (another index type, an overflow page file) must go through `BufferPool.fetch/allocate/markDirty` only. Anything that writes a `PageFile` directly bypasses the log and cannot be rolled back or recovered.
+- **A new in-memory cache over pages** (like `HeapFile`'s free-space list) needs a `reload()` called from `Catalog.reload()`, or a rollback will leave it pointing at pages that no longer exist. Add a regression test that starts from an *empty* structure.
+- **Anything that creates or deletes files** is not covered by the log: keep it out of transactions, as DDL does.
+- **Concurrency** (more than one open transaction) invalidates the recovery argument in `lld/09`; read `hld/06` (R3 follow-ups) before starting.
 
 ## Definition of done for any change
 
