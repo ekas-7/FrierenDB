@@ -15,3 +15,4 @@ target/
 
 # Local configuration and secrets
 .env
+ekas.sh
