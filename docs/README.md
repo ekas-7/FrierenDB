@@ -6,8 +6,8 @@ These documents explain FrierenDB well enough that you could rebuild it by hand,
 
 | If you want to... | Read |
 |---|---|
-| Understand what this is and how the parts fit | [`hld/`](hld/) in order: 01 → 06 |
-| Rebuild it from an empty directory | [`build-guide/`](build-guide/) in order: 00 → 19 |
+| Understand what this is and how the parts fit | [`hld/`](hld/) in order: 01 → 08 |
+| Rebuild it from an empty directory | [`build-guide/`](build-guide/) in order: 00 → 23 |
 | Look up a class, a byte layout, the grammar or an error | [`lld/`](lld/) |
 | Test it, extend it, debug the build | [`guides/`](guides/) |
 
@@ -19,6 +19,8 @@ These documents explain FrierenDB well enough that you could rebuild it by hand,
 4. [`hld/04-design-decisions.md`](hld/04-design-decisions.md): the important choices and their trade-offs
 5. [`hld/05-safety-model.md`](hld/05-safety-model.md): threat model for the AI agent
 6. [`hld/06-limitations-and-roadmap.md`](hld/06-limitations-and-roadmap.md): what is missing and how it would be added
+7. [`hld/07-indexes-and-index-aware-planning.md`](hld/07-indexes-and-index-aware-planning.md): B+ tree indexes and when the planner uses them
+8. [`hld/08-transactions-and-recovery.md`](hld/08-transactions-and-recovery.md): write-ahead log, transactions, crash recovery, and their limits
 
 ## Build guide (step by step)
 
@@ -44,6 +46,10 @@ These documents explain FrierenDB well enough that you could rebuild it by hand,
 | 17 | [`17-agent-tools.md`](build-guide/17-agent-tools.md) | The four read-only tools |
 | 18 | [`18-agent-loop.md`](build-guide/18-agent-loop.md) | Bounded plan-act-observe loop |
 | 19 | [`19-cli-demo-and-eval.md`](build-guide/19-cli-demo-and-eval.md) | REPL, demo data, evaluation harness |
+| 20 | [`20-bplus-tree.md`](build-guide/20-bplus-tree.md) | Persistent B+ tree (can be built any time after step 8) |
+| 21 | [`21-indexes-sql-and-planning.md`](build-guide/21-indexes-sql-and-planning.md) | `CREATE INDEX`, index maintenance, `IndexScan` |
+| 22 | [`22-write-ahead-log-and-recovery.md`](build-guide/22-write-ahead-log-and-recovery.md) | `Wal`, transactional buffer pool, `Recovery` |
+| 23 | [`23-database-transactions.md`](build-guide/23-database-transactions.md) | `BEGIN`/`COMMIT`/`ROLLBACK`, atomic statements, crash tests |
 
 ## Low-level design (LLD) and reference
 
@@ -54,6 +60,8 @@ These documents explain FrierenDB well enough that you could rebuild it by hand,
 - [`lld/05-error-model.md`](lld/05-error-model.md): exception hierarchy, who throws what
 - [`lld/06-explain-examples.md`](lld/06-explain-examples.md): real `EXPLAIN` output, explained
 - [`lld/07-agent-protocol.md`](lld/07-agent-protocol.md): conversation shape and wire format
+- [`lld/08-index-internals.md`](lld/08-index-internals.md): B+ tree algorithms, index maintenance, `IndexSelection` rules
+- [`lld/09-wal-and-recovery-internals.md`](lld/09-wal-and-recovery-internals.md): log format, transactional buffer pool, recovery, `Database` dispatch
 
 ## Guides
 
